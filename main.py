@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
@@ -17,16 +17,22 @@ async def read_root(request: Request):
 
 @app.post("/generate")
 async def generate_knowledgebase(
-    start_url: str = Form(...),
+    url: str = Form(...),
     max_pages: Optional[int] = Form(10),
 ):
     pages_to_crawl = max(1, max_pages or 1)
-    crawler = AsyncCrawler(start_url=start_url, max_pages=pages_to_crawl)
+    crawler = AsyncCrawler(start_url=url, max_pages=pages_to_crawl, include_subdomains=True)
     markdown_content = await crawler.crawl()
-    headers = {
-        "Content-Disposition": "attachment; filename=knowledgebase.md"
-    }
-    return Response(content=markdown_content, media_type="text/markdown", headers=headers)
+
+    if not markdown_content:
+        raise HTTPException(status_code=400, detail="No content could be extracted from the provided URL.")
+
+    headers = {"Content-Disposition": "attachment; filename=knowledgebase.md"}
+    return Response(
+        content=markdown_content,
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
+    )
 
 
 if __name__ == "__main__":
