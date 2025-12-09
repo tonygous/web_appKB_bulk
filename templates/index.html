@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web-to-KnowledgeBase</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        * {
+            box-sizing: border-box;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        body {
+            margin: 0;
+            background: radial-gradient(circle at 10% 20%, #f0f4ff, #f9f9ff 35%), radial-gradient(circle at 90% 10%, #e8f5ff, #fafbff 40%), #f7f8fa;
+            color: #1f2937;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            width: min(900px, 100%);
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 15px 40px rgba(15, 23, 42, 0.12);
+            padding: 32px;
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 32px;
+            border: 1px solid rgba(0, 0, 0, 0.04);
+        }
+        .card-header {
+            grid-column: span 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 28px;
+            letter-spacing: -0.02em;
+            color: #111827;
+        }
+        .badge {
+            padding: 6px 12px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        form {
+            display: grid;
+            gap: 16px;
+        }
+        label {
+            font-weight: 600;
+            color: #111827;
+            font-size: 14px;
+        }
+        input[type="url"], input[type="number"] {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 15px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            background: #f9fafb;
+        }
+        input[type="url"]:focus, input[type="number"]:focus {
+            border-color: #4f46e5;
+            outline: none;
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.12);
+            background: #fff;
+        }
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        button {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            font-weight: 700;
+            font-size: 15px;
+            cursor: pointer;
+            box-shadow: 0 12px 30px rgba(79, 70, 229, 0.25);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 40px rgba(79, 70, 229, 0.32);
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .helper {
+            color: #6b7280;
+            font-size: 14px;
+            margin: 0;
+        }
+        .preview {
+            background: #0f172a;
+            border-radius: 16px;
+            padding: 20px;
+            color: #e5e7eb;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+        .preview h3 {
+            margin-top: 0;
+            color: #c7d2fe;
+            letter-spacing: -0.01em;
+        }
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 3px solid #e0e7ff;
+            border-top-color: #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        .loading .spinner {
+            display: inline-block;
+        }
+        .loading button {
+            pointer-events: none;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @media (max-width: 840px) {
+            .card {
+                grid-template-columns: 1fr;
+            }
+            .card-header {
+                grid-column: span 1;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h1>Web-to-KnowledgeBase</h1>
+                <p class="helper">Crawl any site and generate a markdown knowledge base.</p>
+            </div>
+            <div class="badge">Async FastAPI</div>
+        </div>
+        <form id="crawl-form">
+            <div>
+                <label for="start_url">Start URL</label>
+                <input type="url" id="start_url" name="start_url" placeholder="https://example.com" required>
+            </div>
+            <div class="actions">
+                <div style="flex:1">
+                    <label for="max_pages">Max Pages</label>
+                    <input type="number" id="max_pages" name="max_pages" min="1" max="100" value="10" required>
+                </div>
+                <div style="align-self:flex-end; display:flex; align-items:center; gap:10px;">
+                    <button type="submit" id="generate-btn">Generate</button>
+                    <div class="spinner" id="spinner"></div>
+                </div>
+            </div>
+            <p class="helper">Downloads a consolidated <strong>knowledgebase.md</strong> file containing content from internal pages.</p>
+        </form>
+        <div class="preview">
+            <h3>How it works</h3>
+            <p>Provide a starting URL and a maximum number of pages to crawl. The crawler follows internal links, cleans up navigation and scripts, converts content to markdown, and returns a downloadable knowledge base.</p>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('crawl-form');
+        const spinner = document.getElementById('spinner');
+        const generateBtn = document.getElementById('generate-btn');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            form.classList.add('loading');
+            spinner.style.display = 'inline-block';
+            generateBtn.disabled = true;
+
+            const formData = new FormData(form);
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate knowledge base');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'knowledgebase.md';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                form.classList.remove('loading');
+                spinner.style.display = 'none';
+                generateBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
