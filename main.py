@@ -1,10 +1,10 @@
 import io
 import re
 import zipfile
+from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
-from pathlib import Path
-from datetime import datetime
 
 import httpx
 from fastapi import Body, FastAPI, Form, HTTPException, Request
@@ -48,6 +48,9 @@ async def generate_knowledgebase(
     allowed_hosts: Optional[str] = Form(None),
     path_prefixes: Optional[str] = Form(None),
 ):
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required.")
+
     pages_to_crawl = _clamp_max_pages(max_pages)
     allowed = _parse_list_field(allowed_hosts)
     prefixes = _parse_list_field(path_prefixes)
@@ -59,14 +62,18 @@ async def generate_knowledgebase(
         allowed_hosts=allowed,
         path_prefixes=prefixes,
     )
-    markdown_content = await crawler.crawl()
 
+    markdown_content = await crawler.crawl()
     if not markdown_content:
-        raise HTTPException(status_code=400, detail="No content could be extracted from the provided URL.")
+        raise HTTPException(
+            status_code=400,
+            detail="No content could be extracted from the provided URL.",
+        )
 
     parsed = urlparse(url)
     hostname = _slugify(parsed.hostname or "output")
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
     outputs_dir = Path("outputs")
     outputs_dir.mkdir(parents=True, exist_ok=True)
     output_filename = outputs_dir / f"{hostname}__{timestamp}.md"
@@ -87,6 +94,9 @@ async def crawl_preview(
     allowed_hosts: Optional[str] = Form(None),
     path_prefixes: Optional[str] = Form(None),
 ):
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required.")
+
     pages_to_crawl = _clamp_max_pages(max_pages)
     allowed = _parse_list_field(allowed_hosts)
     prefixes = _parse_list_field(path_prefixes)
@@ -101,7 +111,10 @@ async def crawl_preview(
 
     pages = await crawler.crawl_with_pages()
     if not pages:
-        raise HTTPException(status_code=400, detail="No pages found for this configuration.")
+        raise HTTPException(
+            status_code=400,
+            detail="No pages found for this configuration.",
+        )
 
     preview = []
     for idx, page in enumerate(pages):
@@ -129,6 +142,8 @@ async def download_selected(payload=Body(...)):
     path_prefixes = payload.get("path_prefixes") or []
     pages = payload.get("pages", [])
 
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required.")
     if not pages:
         raise HTTPException(status_code=400, detail="No pages selected.")
 
@@ -142,25 +157,34 @@ async def download_selected(payload=Body(...)):
 
     buffer = io.BytesIO()
     added_files = 0
+
     async with httpx.AsyncClient() as client:
-        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        with zipfile.ZipFile(
+            buffer, mode="w", compression=zipfile.ZIP_DEFLATED
+        ) as zip_file:
             for page in pages:
                 page_url = page.get("url")
                 filename = page.get("filename") or f"page-{added_files}.md"
                 if not page_url or not crawler._is_allowed_url(page_url):
                     continue
+
                 content = await crawler._fetch_content(client, page_url)
                 if not content:
                     continue
+
                 title, markdown = crawler._clean_html(content, page_url)
                 host = page.get("host") or (urlparse(page_url).hostname or "")
                 heading = page.get("title") or page.get("path") or title
+
                 body = f"# {host}\n## {heading}\n\n{markdown}"
                 zip_file.writestr(filename, body)
                 added_files += 1
 
     if added_files == 0:
-        raise HTTPException(status_code=400, detail="No pages could be downloaded with the provided selection.")
+        raise HTTPException(
+            status_code=400,
+            detail="No pages could be downloaded with the provided selection.",
+        )
 
     buffer.seek(0)
     headers = {"Content-Disposition": 'attachment; filename="knowledgebase_pages.zip"'}
