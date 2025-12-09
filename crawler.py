@@ -1,6 +1,7 @@
 import asyncio
 from collections import deque
-from typing import Deque, List, Optional, Set, Tuple
+from dataclasses import dataclass
+from typing import Deque, List, Optional, Sequence, Set, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
@@ -28,6 +29,15 @@ IGNORED_EXTENSIONS = {
 }
 
 
+@dataclass
+class PageRecord:
+    url: str
+    host: str
+    path: str
+    title: str
+    markdown: str
+
+
 class AsyncCrawler:
     def __init__(
         self,
@@ -35,11 +45,16 @@ class AsyncCrawler:
         max_pages: int = 50,
         timeout: float = 10.0,
         include_subdomains: bool = True,
+        allowed_hosts: Optional[Sequence[str]] = None,
+        path_prefixes: Optional[Sequence[str]] = None,
     ) -> None:
         self.start_url = self._normalize_url(start_url)
         self.max_pages = max_pages
         self.timeout = timeout
         self.include_subdomains = include_subdomains
+
+        self.allowed_hosts = self._normalize_hosts(allowed_hosts)
+        self.path_prefixes = self._normalize_prefixes(path_prefixes)
 
         parsed_start = urlparse(self.start_url)
         self.root_domain = self._extract_root_domain(parsed_start.hostname)
@@ -47,6 +62,26 @@ class AsyncCrawler:
         self.visited: Set[str] = set()
         self.enqueued: Set[str] = {self.start_url}
         self.queue: Deque[str] = deque([self.start_url])
+
+    def _normalize_hosts(self, hosts: Optional[Sequence[str]]) -> List[str]:
+        if not hosts:
+            return []
+        normalized: List[str] = []
+        for host in hosts:
+            if not host:
+                continue
+            normalized.append(host.strip().lower())
+        return normalized
+
+    def _normalize_prefixes(self, prefixes: Optional[Sequence[str]]) -> List[str]:
+        if not prefixes:
+            return []
+        normalized: List[str] = []
+        for prefix in prefixes:
+            if not prefix:
+                continue
+            normalized.append(prefix.strip())
+        return normalized
 
     def _normalize_url(self, url: str) -> str:
         if not url:
@@ -75,6 +110,12 @@ class AsyncCrawler:
         if hostname == "":
             return True
 
+        if self.allowed_hosts:
+            for allowed in self.allowed_hosts:
+                if hostname == allowed or hostname.endswith(f".{allowed}"):
+                    return True
+            return False
+
         if hostname == self.root_domain:
             return True
 
@@ -82,6 +123,24 @@ class AsyncCrawler:
             return True
 
         return False
+
+    def _matches_path_prefix(self, url: str) -> bool:
+        if not self.path_prefixes:
+            return True
+        parsed = urlparse(url)
+        path_with_query = parsed.path or "/"
+        if parsed.query:
+            path_with_query += f"?{parsed.query}"
+        return any(path_with_query.startswith(prefix) for prefix in self.path_prefixes)
+
+    def _is_allowed_url(self, url: str) -> bool:
+        if self._has_ignored_extension(url):
+            return False
+        if not self._is_internal_link(url):
+            return False
+        if not self._matches_path_prefix(url):
+            return False
+        return True
 
     def _has_ignored_extension(self, url: str) -> bool:
         path = urlparse(url).path.lower()
@@ -122,9 +181,7 @@ class AsyncCrawler:
             absolute_url = self._normalize_url(urljoin(url, href))
             if not absolute_url:
                 continue
-            if not self._is_internal_link(absolute_url):
-                continue
-            if self._has_ignored_extension(absolute_url):
+            if not self._is_allowed_url(absolute_url):
                 continue
             if absolute_url not in self.visited and absolute_url not in self.enqueued:
                 links.append(absolute_url)
@@ -132,7 +189,7 @@ class AsyncCrawler:
 
     async def _process_url(
         self, client: httpx.AsyncClient, url: str
-    ) -> Optional[Tuple[str, str, List[str]]]:
+    ) -> Optional[Tuple[PageRecord, List[str]]]:
         content = await self._fetch_content(client, url)
         if not content:
             return None
@@ -140,10 +197,22 @@ class AsyncCrawler:
         soup = BeautifulSoup(content, "html.parser")
         links = self._extract_links(url, soup)
         title, markdown = self._clean_html(content, url)
-        return title, markdown, links
+        parsed_url = urlparse(url)
+        host = parsed_url.hostname or self.root_domain or ""
+        path = parsed_url.path or "/"
+        if parsed_url.query:
+            path = f"{path}?{parsed_url.query}"
+        page_record = PageRecord(
+            url=url,
+            host=host,
+            path=path or "/",
+            title=title or "",
+            markdown=markdown,
+        )
+        return page_record, links
 
-    async def crawl(self) -> str:
-        pages: List[Tuple[str, str]] = []
+    async def crawl_with_pages(self) -> List[PageRecord]:
+        pages: List[PageRecord] = []
         concurrency_limit = 5
 
         async with httpx.AsyncClient() as client:
@@ -157,9 +226,7 @@ class AsyncCrawler:
                     current_url = self.queue.popleft()
                     if current_url in self.visited:
                         continue
-                    if self._has_ignored_extension(current_url):
-                        continue
-                    if not self._is_internal_link(current_url):
+                    if not self._is_allowed_url(current_url):
                         continue
                     self.visited.add(current_url)
                     tasks.append(asyncio.create_task(self._process_url(client, current_url)))
@@ -171,19 +238,27 @@ class AsyncCrawler:
                 for result in results:
                     if not result:
                         continue
-                    title, markdown, links = result
-                    pages.append((title, markdown))
+                    page_record, links = result
+                    pages.append(page_record)
                     for link in links:
                         if len(self.visited) + len(self.queue) >= self.max_pages:
                             break
+                        if not self._is_allowed_url(link):
+                            continue
+                        if link in self.visited or link in self.enqueued:
+                            continue
                         self.enqueued.add(link)
                         self.queue.append(link)
 
+        return pages
+
+    async def crawl(self) -> str:
+        pages = await self.crawl_with_pages()
         return self._combine_pages(pages)
 
-    def _combine_pages(self, pages: List[Tuple[str, str]]) -> str:
+    def _combine_pages(self, pages: List[PageRecord]) -> str:
         markdown_parts = []
-        for title, markdown in pages:
-            section = f"# {title}\n\n{markdown.strip()}"
+        for page in pages:
+            section = f"# {page.title}\n\n{page.markdown.strip()}"
             markdown_parts.append(section)
         return "\n\n---\n\n".join(markdown_parts)
