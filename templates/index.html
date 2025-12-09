@@ -26,7 +26,7 @@
             padding: 24px;
         }
         .card {
-            width: min(900px, 100%);
+            width: min(1100px, 100%);
             background: #ffffff;
             border-radius: 20px;
             box-shadow: 0 15px 40px rgba(15, 23, 42, 0.12);
@@ -49,6 +49,9 @@
             letter-spacing: -0.02em;
             color: #111827;
         }
+        h3 {
+            margin: 0 0 8px 0;
+        }
         .badge {
             padding: 6px 12px;
             border-radius: 12px;
@@ -66,7 +69,7 @@
             color: #111827;
             font-size: 14px;
         }
-        input[type="url"], input[type="number"] {
+        input[type="url"], input[type="number"], input[type="text"] {
             width: 100%;
             padding: 12px 14px;
             border: 1px solid #e5e7eb;
@@ -75,7 +78,7 @@
             transition: border-color 0.2s, box-shadow 0.2s;
             background: #f9fafb;
         }
-        input[type="url"]:focus, input[type="number"]:focus {
+        input[type="url"]:focus, input[type="number"]:focus, input[type="text"]:focus {
             border-color: #4f46e5;
             outline: none;
             box-shadow: 0 8px 20px rgba(79, 70, 229, 0.12);
@@ -83,8 +86,9 @@
         }
         .actions {
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             gap: 12px;
+            flex-wrap: wrap;
         }
         button {
             padding: 12px 18px;
@@ -110,6 +114,10 @@
             cursor: not-allowed;
             box-shadow: none;
         }
+        .secondary-btn {
+            background: #111827;
+            box-shadow: 0 12px 30px rgba(17, 24, 39, 0.18);
+        }
         .helper {
             color: #6b7280;
             font-size: 14px;
@@ -120,24 +128,19 @@
             border-radius: 16px;
             padding: 20px;
             color: #e5e7eb;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
         }
         .preview h3 {
-            margin-top: 0;
-            color: #c7d2fe;
-            letter-spacing: -0.01em;
+            color: #fff;
         }
         .spinner {
-            width: 18px;
-            height: 18px;
-            border: 3px solid #e0e7ff;
-            border-top-color: #4f46e5;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-top-color: #fff;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
             display: none;
-        }
-        .loading .spinner {
-            display: inline-block;
         }
         .loading button {
             pointer-events: none;
@@ -151,6 +154,80 @@
             font-size: 14px;
             display: none;
         }
+        .selection-panel {
+            grid-column: span 2;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 18px 20px;
+        }
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .host-group {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+        }
+        .host-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .host-title {
+            font-weight: 700;
+            color: #111827;
+        }
+        .pages-list {
+            display: grid;
+            gap: 8px;
+        }
+        .page-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 12px;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+        }
+        .page-title {
+            font-weight: 700;
+            color: #111827;
+        }
+        .page-url {
+            color: #6b7280;
+            font-size: 13px;
+        }
+        .filename {
+            color: #4b5563;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .selection-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .muted-box {
+            padding: 12px;
+            border-radius: 10px;
+            background: #eef2ff;
+            color: #4338ca;
+            border: 1px solid #c7d2fe;
+        }
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
@@ -162,6 +239,17 @@
                 grid-column: span 1;
                 flex-direction: column;
                 align-items: flex-start;
+            }
+            .selection-panel {
+                grid-column: span 1;
+            }
+            .page-row {
+                grid-template-columns: auto 1fr;
+                grid-template-rows: auto auto;
+            }
+            .filename {
+                grid-column: span 2;
+                justify-self: flex-start;
             }
         }
     </style>
@@ -180,24 +268,56 @@
                 <label for="url-input">Website URL</label>
                 <input type="url" id="url-input" name="url" placeholder="Enter website URL (e.g. https://docs.mexem.com)" required>
             </div>
+            <div>
+                <label for="allowed-hosts-input">Allowed domains / subdomains</label>
+                <input type="text" id="allowed-hosts-input" name="allowed_hosts" placeholder="e.g. mexem.com, support.mexem.com">
+                <p class="helper">Comma or space separated. Leave blank to include the root domain and subdomains.</p>
+            </div>
+            <div>
+                <label for="path-prefixes-input">Path prefixes (optional)</label>
+                <input type="text" id="path-prefixes-input" name="path_prefixes" placeholder="e.g. /, /help, /docs">
+                <p class="helper">Only crawl URLs that start with these prefixes.</p>
+            </div>
             <div class="actions">
                 <div style="flex:1; max-width: 220px;">
                     <label for="max-pages-input">Max pages</label>
                     <input type="number" id="max-pages-input" name="max_pages" min="1" max="500" value="20" required>
                 </div>
-                <div style="align-self:flex-end; display:flex; align-items:center; gap:10px;">
-                    <button type="submit" id="generate-btn">
+                <div style="align-self:flex-end; display:flex; align-items:center; gap:10px; flex-wrap: wrap;">
+                    <button type="button" id="scan-btn">
+                        <div class="spinner" id="scan-spinner" aria-hidden="true"></div>
+                        <span id="scan-text">Scan pages</span>
+                    </button>
+                    <button type="submit" id="generate-btn" class="secondary-btn">
                         <div class="spinner" id="spinner" aria-hidden="true"></div>
-                        <span id="button-text">Generate knowledge base</span>
+                        <span id="button-text">Download combined .md</span>
                     </button>
                 </div>
             </div>
             <div class="alert" id="alert-box" role="alert" aria-live="polite"></div>
-            <p class="helper">Downloads a consolidated <strong>knowledgebase.md</strong> file containing content from internal pages.</p>
+            <p class="helper">Download a consolidated <strong>knowledgebase.md</strong> or pick individual pages for a ZIP export.</p>
         </form>
         <div class="preview">
             <h3>How it works</h3>
-            <p>Provide a starting URL and a maximum number of pages to crawl. The crawler follows internal links, cleans up navigation and scripts, converts content to markdown, and returns a downloadable knowledge base.</p>
+            <p>Provide a starting URL and a maximum number of pages to crawl. The crawler follows internal links, cleans up navigation and scripts, converts content to markdown, and returns downloadable files.</p>
+        </div>
+        <div class="selection-panel">
+            <div class="panel-header">
+                <div>
+                    <h3>Select pages to export</h3>
+                    <p class="helper">Run a scan to preview pages, choose what you need, then download as separate markdown files.</p>
+                </div>
+                <div class="badge" aria-hidden="true">Preview</div>
+            </div>
+            <div id="preview-empty" class="muted-box">Run a scan to see discovered pages.</div>
+            <div id="preview-results"></div>
+            <div class="selection-actions">
+                <span id="selected-count" class="helper">Selected: 0 pages</span>
+                <button type="button" id="download-selected-btn" class="secondary-btn" disabled>
+                    <div class="spinner" id="download-spinner" aria-hidden="true"></div>
+                    <span id="download-text">Download selected (.zip)</span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -207,6 +327,18 @@
         const generateBtn = document.getElementById('generate-btn');
         const buttonText = document.getElementById('button-text');
         const alertBox = document.getElementById('alert-box');
+        const scanBtn = document.getElementById('scan-btn');
+        const scanSpinner = document.getElementById('scan-spinner');
+        const scanText = document.getElementById('scan-text');
+        const previewResults = document.getElementById('preview-results');
+        const previewEmpty = document.getElementById('preview-empty');
+        const selectedCount = document.getElementById('selected-count');
+        const downloadSelectedBtn = document.getElementById('download-selected-btn');
+        const downloadSpinner = document.getElementById('download-spinner');
+        const downloadText = document.getElementById('download-text');
+
+        let previewPages = [];
+        let isDownloadingSelected = false;
 
         const setLoading = (isLoading) => {
             if (isLoading) {
@@ -218,13 +350,106 @@
                 form.classList.remove('loading');
                 spinner.style.display = 'none';
                 generateBtn.disabled = false;
-                buttonText.textContent = 'Generate knowledge base';
+                buttonText.textContent = 'Download combined .md';
             }
+        };
+
+        const setScanLoading = (isLoading) => {
+            if (isLoading) {
+                scanSpinner.style.display = 'inline-block';
+                scanBtn.disabled = true;
+                scanText.textContent = 'Scanning…';
+            } else {
+                scanSpinner.style.display = 'none';
+                scanBtn.disabled = false;
+                scanText.textContent = 'Scan pages';
+            }
+        };
+
+        const setDownloadLoading = (isLoading) => {
+            isDownloadingSelected = isLoading;
+            if (isLoading) {
+                downloadSpinner.style.display = 'inline-block';
+                downloadSelectedBtn.disabled = true;
+                downloadText.textContent = 'Preparing ZIP…';
+            } else {
+                downloadSpinner.style.display = 'none';
+                downloadSelectedBtn.disabled = false;
+                downloadText.textContent = 'Download selected (.zip)';
+            }
+            updateSelectedCount();
         };
 
         const showError = (message) => {
             alertBox.textContent = message;
             alertBox.style.display = message ? 'block' : 'none';
+        };
+
+        const updateSelectedCount = () => {
+            const selected = document.querySelectorAll('.page-checkbox:checked').length;
+            selectedCount.textContent = `Selected: ${selected} page${selected === 1 ? '' : 's'}`;
+            downloadSelectedBtn.disabled = selected === 0 || previewPages.length === 0 || isDownloadingSelected;
+        };
+
+        const renderPreview = (pages) => {
+            previewPages = pages;
+            previewResults.innerHTML = '';
+
+            if (!pages.length) {
+                previewEmpty.textContent = 'No pages found for this configuration.';
+                previewEmpty.style.display = 'block';
+                updateSelectedCount();
+                return;
+            }
+
+            previewEmpty.style.display = 'none';
+
+            const grouped = pages.reduce((acc, page) => {
+                if (!acc[page.host]) {
+                    acc[page.host] = [];
+                }
+                acc[page.host].push(page);
+                return acc;
+            }, {});
+
+            Object.entries(grouped).forEach(([host, hostPages]) => {
+                const hostContainer = document.createElement('div');
+                hostContainer.className = 'host-group';
+                hostContainer.dataset.host = host;
+
+                const hostHeader = document.createElement('div');
+                hostHeader.className = 'host-header';
+                hostHeader.innerHTML = `
+                    <div class="host-title">${host || 'Unknown host'}</div>
+                    <label class="helper" style="display:flex; align-items:center; gap:6px;">
+                        <input type="checkbox" class="host-toggle" data-host="${host}" checked>
+                        Select all
+                    </label>
+                `;
+                hostContainer.appendChild(hostHeader);
+
+                const list = document.createElement('div');
+                list.className = 'pages-list';
+
+                hostPages.forEach((page) => {
+                    const row = document.createElement('label');
+                    row.className = 'page-row';
+                    row.innerHTML = `
+                        <input type="checkbox" class="page-checkbox" data-id="${page.id}" data-host="${host}" checked>
+                        <div>
+                            <div class="page-title">${page.title || page.path || page.url}</div>
+                            <div class="page-url">${page.path} • ${page.url}</div>
+                        </div>
+                        <div class="filename">${page.suggested_filename}</div>
+                    `;
+                    list.appendChild(row);
+                });
+
+                hostContainer.appendChild(list);
+                previewResults.appendChild(hostContainer);
+            });
+
+            updateSelectedCount();
         };
 
         form.addEventListener('submit', async (event) => {
@@ -247,7 +472,7 @@
                             message = errorData.detail;
                         }
                     } catch (jsonError) {
-                        // If parsing fails, keep the default message.
+                        // keep default
                     }
                     showError(message);
                     return;
@@ -266,6 +491,149 @@
                 showError('An unexpected error occurred. Please try again.');
             } finally {
                 setLoading(false);
+            }
+        });
+
+        scanBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            showError('');
+            setScanLoading(true);
+
+            const formData = new FormData(form);
+            try {
+                const response = await fetch('/crawl-preview', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    let message = 'Failed to scan pages. Please adjust your settings and try again.';
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.detail) {
+                            message = errorData.detail;
+                        }
+                    } catch (jsonError) {
+                        // ignore
+                    }
+                    showError(message);
+                    renderPreview([]);
+                    return;
+                }
+
+                const data = await response.json();
+                renderPreview(data);
+            } catch (error) {
+                showError('An unexpected error occurred while scanning.');
+            } finally {
+                setScanLoading(false);
+            }
+        });
+
+        previewResults.addEventListener('change', (event) => {
+            const target = event.target;
+            if (target.classList.contains('host-toggle')) {
+                const host = target.dataset.host;
+                const checkboxes = previewResults.querySelectorAll(`.page-checkbox[data-host="${host}"]`);
+                checkboxes.forEach((box) => {
+                    box.checked = target.checked;
+                });
+            } else if (target.classList.contains('page-checkbox')) {
+                const host = target.dataset.host;
+                const hostBoxes = previewResults.querySelectorAll(`.page-checkbox[data-host="${host}"]`);
+                const hostToggle = previewResults.querySelector(`.host-toggle[data-host="${host}"]`);
+                if (hostToggle) {
+                    hostToggle.checked = Array.from(hostBoxes).every((box) => box.checked);
+                }
+            }
+            updateSelectedCount();
+        });
+
+        const parseInputList = (value) => {
+            if (!value) return [];
+            return value
+                .split(/[,\s]+/)
+                .map((part) => part.trim())
+                .filter((part) => part.length > 0);
+        };
+
+        downloadSelectedBtn.addEventListener('click', async () => {
+            showError('');
+            const selectedCheckboxes = Array.from(document.querySelectorAll('.page-checkbox:checked'));
+            if (!selectedCheckboxes.length) {
+                showError('No pages selected. Please choose at least one page.');
+                return;
+            }
+
+            const selectedPages = selectedCheckboxes
+                .map((checkbox) => {
+                    const id = Number(checkbox.dataset.id);
+                    return previewPages.find((page) => page.id === id);
+                })
+                .filter(Boolean)
+                .map((page) => ({
+                    url: page.url,
+                    host: page.host,
+                    path: page.path,
+                    title: page.title,
+                    filename: page.suggested_filename,
+                }));
+
+            if (!selectedPages.length) {
+                showError('No pages selected. Please choose at least one page.');
+                return;
+            }
+
+            const allowedHostsInput = document.getElementById('allowed-hosts-input').value;
+            const pathPrefixesInput = document.getElementById('path-prefixes-input').value;
+
+            const payload = {
+                url: document.getElementById('url-input').value,
+                max_pages: Number(document.getElementById('max-pages-input').value || 10),
+                allowed_hosts: parseInputList(allowedHostsInput),
+                path_prefixes: parseInputList(pathPrefixesInput),
+                pages: selectedPages,
+            };
+
+            setDownloadLoading(true);
+
+            try {
+                const response = await fetch('/download-selected', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    let message = 'Failed to prepare ZIP. Please try again.';
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.detail) {
+                            message = errorData.detail;
+                        }
+                    } catch (jsonError) {
+                        // ignore
+                    }
+                    showError(message);
+                    return;
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'knowledgebase_pages.zip';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                showError('An unexpected error occurred while preparing the ZIP.');
+            } finally {
+                setDownloadLoading(false);
+                updateSelectedCount();
             }
         });
     </script>
