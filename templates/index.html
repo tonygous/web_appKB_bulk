@@ -92,6 +92,23 @@
             background-color: #ffffff !important;
             caret-color: #000000;
         }
+        textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 15px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            background: #f9fafb;
+            color: #000000;
+            resize: vertical;
+        }
+        textarea:focus {
+            border-color: #4f46e5;
+            outline: none;
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.12);
+            background: #fff;
+        }
         input::placeholder {
             color: #666666 !important;
         }
@@ -237,6 +254,20 @@
             gap: 12px;
             margin-top: 10px;
         }
+        .bulk-section {
+            grid-column: span 2;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+        }
+        .bulk-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 12px;
+        }
         .muted-box {
             padding: 12px;
             border-radius: 10px;
@@ -317,6 +348,35 @@
             <h3>How it works</h3>
             <p>Provide a starting URL and a maximum number of pages to crawl. The crawler follows internal links, cleans up navigation and scripts, converts content to markdown, and returns downloadable files.</p>
         </div>
+        <div class="bulk-section">
+            <div class="panel-header">
+                <div>
+                    <h3>Bulk URL mode (for known guide pages)</h3>
+                    <p class="helper">Paste known URLs to generate combined or per-page markdown files.</p>
+                </div>
+                <div class="badge" aria-hidden="true">Bulk</div>
+            </div>
+            <textarea
+                id="bulk_urls"
+                name="bulk_urls"
+                rows="8"
+                placeholder="Paste one URL per line, e.g.:
+https://www.ibkrguides.com/clientportal/getting-started-portals.htm
+https://www.ibkrguides.com/clientportal/gettingstarted/your-dashboard.htm
+..."
+            ></textarea>
+            <p class="helper">Each line should be a full URL. Only allowed domains and path prefixes will be processed.</p>
+            <div class="bulk-actions">
+                <button type="button" id="bulk-combined-btn" onclick="runBulkCombined()">
+                    <div class="spinner" id="bulk-combined-spinner" aria-hidden="true"></div>
+                    <span id="bulk-combined-text">Bulk: combined .md</span>
+                </button>
+                <button type="button" class="secondary-btn" id="bulk-zip-btn" onclick="runBulkZip()">
+                    <div class="spinner" id="bulk-zip-spinner" aria-hidden="true"></div>
+                    <span id="bulk-zip-text">Bulk: per-page .zip</span>
+                </button>
+            </div>
+        </div>
         <div class="selection-panel">
             <div class="panel-header">
                 <div>
@@ -352,6 +412,13 @@
         const downloadSelectedBtn = document.getElementById('download-selected-btn');
         const downloadSpinner = document.getElementById('download-spinner');
         const downloadText = document.getElementById('download-text');
+        const bulkTextarea = document.getElementById('bulk_urls');
+        const bulkCombinedBtn = document.getElementById('bulk-combined-btn');
+        const bulkCombinedSpinner = document.getElementById('bulk-combined-spinner');
+        const bulkCombinedText = document.getElementById('bulk-combined-text');
+        const bulkZipBtn = document.getElementById('bulk-zip-btn');
+        const bulkZipSpinner = document.getElementById('bulk-zip-spinner');
+        const bulkZipText = document.getElementById('bulk-zip-text');
 
         let previewPages = [];
         let isDownloadingSelected = false;
@@ -573,6 +640,41 @@
                 .filter((part) => part.length > 0);
         };
 
+        const buildBulkPayload = () => {
+            const raw = bulkTextarea?.value || '';
+            const urls = raw
+                .split(/[\r\n]+/)
+                .map((u) => u.trim())
+                .filter((u) => u.length > 0);
+
+            if (!urls.length) {
+                showError('Please paste at least one URL.');
+                return null;
+            }
+
+            const allowedHostsInput = document.getElementById('allowed-hosts-input')?.value || '';
+            const pathPrefixesInput = document.getElementById('path-prefixes-input')?.value || '';
+
+            return {
+                urls,
+                allowed_hosts: parseInputList(allowedHostsInput),
+                path_prefixes: parseInputList(pathPrefixesInput),
+                max_pages: 200,
+            };
+        };
+
+        const setBulkLoading = (type, isLoading) => {
+            if (type === 'combined') {
+                bulkCombinedSpinner.style.display = isLoading ? 'inline-block' : 'none';
+                bulkCombinedBtn.disabled = isLoading;
+                bulkCombinedText.textContent = isLoading ? 'Generating…' : 'Bulk: combined .md';
+            } else if (type === 'zip') {
+                bulkZipSpinner.style.display = isLoading ? 'inline-block' : 'none';
+                bulkZipBtn.disabled = isLoading;
+                bulkZipText.textContent = isLoading ? 'Generating…' : 'Bulk: per-page .zip';
+            }
+        };
+
         downloadSelectedBtn.addEventListener('click', async () => {
             showError('');
             const selectedCheckboxes = Array.from(document.querySelectorAll('.page-checkbox:checked'));
@@ -652,6 +754,98 @@
                 updateSelectedCount();
             }
         });
+
+        window.runBulkCombined = async () => {
+            showError('');
+            const payload = buildBulkPayload();
+            if (!payload) return;
+
+            setBulkLoading('combined', true);
+
+            try {
+                const response = await fetch('/bulk-combined-md', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    let message = 'Failed to generate combined markdown. Please try again.';
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.detail) {
+                            message = errorData.detail;
+                        }
+                    } catch (jsonError) {
+                        // ignore
+                    }
+                    showError(message);
+                    return;
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'bulk_knowledgebase.md';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                showError('An unexpected error occurred. Please try again.');
+            } finally {
+                setBulkLoading('combined', false);
+            }
+        };
+
+        window.runBulkZip = async () => {
+            showError('');
+            const payload = buildBulkPayload();
+            if (!payload) return;
+
+            setBulkLoading('zip', true);
+
+            try {
+                const response = await fetch('/bulk-zip', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    let message = 'Failed to prepare ZIP. Please try again.';
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.detail) {
+                            message = errorData.detail;
+                        }
+                    } catch (jsonError) {
+                        // ignore
+                    }
+                    showError(message);
+                    return;
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'bulk_pages.zip';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                showError('An unexpected error occurred while preparing the ZIP.');
+            } finally {
+                setBulkLoading('zip', false);
+            }
+        };
     </script>
 </body>
 </html>
