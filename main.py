@@ -3,7 +3,7 @@ import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 from urllib.parse import urlparse
 
 import httpx
@@ -11,7 +11,7 @@ from fastapi import Body, FastAPI, Form, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from crawler import AsyncCrawler
+from crawler import AsyncCrawler, PageRecord
 
 app = FastAPI(title="Web-to-KnowledgeBase")
 templates = Jinja2Templates(directory="templates")
@@ -39,6 +39,36 @@ def _slugify(value: str) -> str:
 def _clamp_max_pages(raw_value: Optional[int]) -> int:
     pages = raw_value or 1
     return max(1, min(pages, 500))
+
+
+BULK_URL_LIMIT = 200
+
+
+def _clean_json_list(values: Optional[Sequence[str]]) -> List[str]:
+    cleaned: List[str] = []
+    if not values:
+        return cleaned
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        stripped = value.strip()
+        if stripped:
+            cleaned.append(stripped)
+    return cleaned
+
+
+def _dedupe_urls(urls: Sequence[str]) -> List[str]:
+    deduped: List[str] = []
+    seen = set()
+    for raw in urls:
+        if not isinstance(raw, str):
+            continue
+        cleaned = raw.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        deduped.append(cleaned)
+        seen.add(cleaned)
+    return deduped
 
 
 @app.post("/generate")
@@ -189,6 +219,124 @@ async def download_selected(payload=Body(...)):
 
     buffer.seek(0)
     headers = {"Content-Disposition": 'attachment; filename="knowledgebase_pages.zip"'}
+    return StreamingResponse(buffer, media_type="application/zip", headers=headers)
+
+
+async def _collect_bulk_pages(
+    urls: List[str],
+    crawler: AsyncCrawler,
+    client: httpx.AsyncClient,
+) -> List[PageRecord]:
+    pages: List[PageRecord] = []
+    for url in urls:
+        page = await crawler.fetch_and_clean_page(client, url)
+        if page:
+            pages.append(page)
+    return pages
+
+
+def _build_bulk_summary_markdown(crawler: AsyncCrawler, pages: List[PageRecord]) -> str:
+    return crawler._combine_pages(pages)
+
+
+@app.post("/bulk-combined-md")
+async def bulk_combined_md(payload=Body(...)):
+    raw_urls = payload.get("urls") if isinstance(payload, dict) else None
+    if not isinstance(raw_urls, list):
+        raise HTTPException(status_code=400, detail="A list of URLs is required.")
+
+    cleaned_urls = _dedupe_urls(raw_urls)
+    if not cleaned_urls:
+        raise HTTPException(status_code=400, detail="At least one valid URL is required.")
+    if len(cleaned_urls) > BULK_URL_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A maximum of {BULK_URL_LIMIT} URLs is allowed per request.",
+        )
+
+    allowed_hosts = _clean_json_list(payload.get("allowed_hosts")) if isinstance(payload, dict) else []
+    path_prefixes = _clean_json_list(payload.get("path_prefixes")) if isinstance(payload, dict) else []
+    max_pages = _clamp_max_pages(payload.get("max_pages") if isinstance(payload, dict) else None)
+
+    crawler = AsyncCrawler(
+        start_url=cleaned_urls[0],
+        max_pages=max_pages,
+        include_subdomains=True,
+        allowed_hosts=allowed_hosts,
+        path_prefixes=path_prefixes,
+    )
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "Web-to-KnowledgeBase/1.0 (+https://example.com)"}
+    ) as client:
+        pages = await _collect_bulk_pages(cleaned_urls, crawler, client)
+
+    if not pages:
+        raise HTTPException(
+            status_code=400,
+            detail="No content could be extracted from the provided URLs.",
+        )
+
+    markdown_content = _build_bulk_summary_markdown(crawler, pages)
+    headers = {"Content-Disposition": 'attachment; filename="bulk_knowledgebase.md"'}
+    return Response(
+        content=markdown_content,
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
+    )
+
+
+@app.post("/bulk-zip")
+async def bulk_zip(payload=Body(...)):
+    raw_urls = payload.get("urls") if isinstance(payload, dict) else None
+    if not isinstance(raw_urls, list):
+        raise HTTPException(status_code=400, detail="A list of URLs is required.")
+
+    cleaned_urls = _dedupe_urls(raw_urls)
+    if not cleaned_urls:
+        raise HTTPException(status_code=400, detail="At least one valid URL is required.")
+    if len(cleaned_urls) > BULK_URL_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A maximum of {BULK_URL_LIMIT} URLs is allowed per request.",
+        )
+
+    allowed_hosts = _clean_json_list(payload.get("allowed_hosts")) if isinstance(payload, dict) else []
+    path_prefixes = _clean_json_list(payload.get("path_prefixes")) if isinstance(payload, dict) else []
+    max_pages = _clamp_max_pages(payload.get("max_pages") if isinstance(payload, dict) else None)
+
+    crawler = AsyncCrawler(
+        start_url=cleaned_urls[0],
+        max_pages=max_pages,
+        include_subdomains=True,
+        allowed_hosts=allowed_hosts,
+        path_prefixes=path_prefixes,
+    )
+
+    buffer = io.BytesIO()
+    added_files = 0
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "Web-to-KnowledgeBase/1.0 (+https://example.com)"}
+    ) as client:
+        pages = await _collect_bulk_pages(cleaned_urls, crawler, client)
+        with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+            for page in pages:
+                title_or_path = page.title or page.path or page.url
+                filename = f"{page.host}__{_slugify(title_or_path)}.md"
+                body = f"# {page.host}\n## {title_or_path}\n\n{page.markdown}"
+                normalized_body = crawler._normalize_markdown(body)
+                zip_file.writestr(filename, normalized_body)
+                added_files += 1
+
+    if added_files == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No pages could be downloaded with the provided URLs.",
+        )
+
+    buffer.seek(0)
+    headers = {"Content-Disposition": 'attachment; filename="bulk_pages.zip"'}
     return StreamingResponse(buffer, media_type="application/zip", headers=headers)
 
 

@@ -267,6 +267,35 @@ class AsyncCrawler:
         )
         return page_record, links
 
+    async def fetch_and_clean_page(
+        self, client: httpx.AsyncClient, url: str
+    ) -> Optional[PageRecord]:
+        normalized_url = self._normalize_url(url)
+        if not normalized_url:
+            return None
+
+        if not self._is_allowed_url(normalized_url):
+            return None
+
+        content = await self._fetch_content(client, normalized_url)
+        if not content:
+            return None
+
+        title, markdown = self._clean_html(content, normalized_url)
+        parsed_url = urlparse(normalized_url)
+        host = parsed_url.hostname or self.root_domain or ""
+        path = parsed_url.path or "/"
+        if parsed_url.query:
+            path = f"{path}?{parsed_url.query}"
+
+        return PageRecord(
+            url=normalized_url,
+            host=host,
+            path=path or "/",
+            title=title or "",
+            markdown=markdown,
+        )
+
     async def crawl_with_pages(self) -> List[PageRecord]:
         pages: List[PageRecord] = []
         semaphore = asyncio.Semaphore(self.max_concurrent_requests)
