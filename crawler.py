@@ -183,6 +183,9 @@ class AsyncCrawler:
             for tag in soup.find_all(tag_name):
                 tag.decompose()
 
+        for tag in soup.find_all("img"):
+            tag.decompose()
+
         content_area = soup.find("main") or soup.find("article") or soup.body or soup
         title_text = ""
         if soup.title and soup.title.string:
@@ -192,8 +195,31 @@ class AsyncCrawler:
         markdown_converter = html2text.HTML2Text()
         markdown_converter.body_width = 0
         markdown_converter.ignore_links = False
+        markdown_converter.ignore_images = True
         markdown_content = markdown_converter.handle(str(content_area))
-        return title, markdown_content.strip()
+        return title, self._normalize_markdown(markdown_content)
+
+    def _normalize_markdown(self, text: str) -> str:
+        lines = [line.rstrip() for line in text.splitlines()]
+
+        while lines and lines[0] == "":
+            lines.pop(0)
+        while lines and lines[-1] == "":
+            lines.pop()
+
+        normalized_lines: List[str] = []
+        previous_blank = False
+        for line in lines:
+            is_blank = line == ""
+            if is_blank and previous_blank:
+                continue
+            normalized_lines.append(line)
+            previous_blank = is_blank
+
+        normalized_text = "\n".join(normalized_lines)
+        if not normalized_text.endswith("\n"):
+            normalized_text += "\n"
+        return normalized_text
 
     def _extract_links(self, url: str, soup: BeautifulSoup) -> List[str]:
         links: List[str] = []
@@ -327,10 +353,15 @@ class AsyncCrawler:
             host_section: List[str] = [f"# {host}"]
             for page in pages_by_host[host]:
                 title = page.title or page.path or page.url
-                body = page.markdown.strip()
-                host_section.append(f"## {title}\n\n{body}")
+                body = page.markdown.rstrip()
+                host_section.append(f"## {title}\n\n{body}\n")
             markdown_parts.append("\n\n".join(host_section))
 
         body = "\n\n---\n\n".join(markdown_parts)
-        return "\n".join(summary_lines) + "\n\n" + body
+        combined = "\n".join(summary_lines)
+        if body:
+            combined += "\n\n" + body
+        if not combined.endswith("\n"):
+            combined += "\n"
+        return combined
 
