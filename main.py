@@ -177,7 +177,8 @@ async def download_selected(payload=Body(...)):
                 heading = page.get("title") or page.get("path") or title
 
                 body = f"# {host}\n## {heading}\n\n{markdown}"
-                zip_file.writestr(filename, body)
+                normalized_body = crawler._normalize_markdown(body)
+                zip_file.writestr(filename, normalized_body)
                 added_files += 1
 
     if added_files == 0:
